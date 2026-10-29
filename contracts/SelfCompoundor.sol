@@ -174,13 +174,15 @@ contract SelfCompoundor is Ownable, ReentrancyGuard {
                     SafeERC20.safeApprove(IERC20(state.token1), address(nonfungiblePositionManager), state.maxAddAmount1);
                 }                
 
+                uint256 amount0Min = state.maxAddAmount0.mul(995).div(1000);
+                uint256 amount1Min = state.maxAddAmount1.mul(995).div(1000);
                 (, state.compounded0, state.compounded1) = nonfungiblePositionManager.increaseLiquidity(
                     INonfungiblePositionManager.IncreaseLiquidityParams(
                         tokenId,
                         state.maxAddAmount0,
                         state.maxAddAmount1,
-                        0,
-                        0,
+                        amount0Min,
+                        amount1Min,
                         block.timestamp
                     )
                 );
@@ -307,8 +309,9 @@ contract SelfCompoundor is Ownable, ReentrancyGuard {
 
         if (state.delta0 > 0) {
             if (state.sell0) {
+                uint256 minAmountOut = state.delta0.mul(state.priceX96).div(Q96).mul(990).div(1000);
                 SafeERC20.safeApprove(IERC20(params.token0), address(swapRouter), state.delta0);
-                uint256 amountOut = _swap(abi.encodePacked(params.token0, params.fee, params.token1), state.delta0);
+                uint256 amountOut = _swap(abi.encodePacked(params.token0, params.fee, params.token1), state.delta0, minAmountOut);
                 SafeERC20.safeApprove(IERC20(params.token0), address(swapRouter), 0);
 
                 amount0 = amount0.sub(state.delta0);
@@ -317,8 +320,9 @@ contract SelfCompoundor is Ownable, ReentrancyGuard {
                 state.delta1 = state.delta0.mul(state.priceX96).div(Q96);
                 // prevent possible rounding to 0 issue
                 if (state.delta1 > 0) {
+                    uint256 minAmountOut = state.delta1.mul(Q96).div(state.priceX96).mul(990).div(1000);
                     SafeERC20.safeApprove(IERC20(params.token1), address(swapRouter), state.delta1);
-                    uint256 amountOut = _swap(abi.encodePacked(params.token1, params.fee, params.token0), state.delta1);
+                    uint256 amountOut = _swap(abi.encodePacked(params.token1, params.fee, params.token0), state.delta1, minAmountOut);
                     SafeERC20.safeApprove(IERC20(params.token1), address(swapRouter), 0);
 
                     amount0 = amount0.add(amountOut);
@@ -328,7 +332,7 @@ contract SelfCompoundor is Ownable, ReentrancyGuard {
         }
     }
 
-    function _swap(bytes memory swapPath, uint256 amount) internal returns (uint256 amountOut) {
-        amountOut = swapRouter.exactInput(IV3SwapRouter.ExactInputParams(swapPath, address(this), amount, 0)); // oracle price check prevents sandwich attacks
+    function _swap(bytes memory swapPath, uint256 amount, uint256 minAmountOut) internal returns (uint256 amountOut) {
+        amountOut = swapRouter.exactInput(IV3SwapRouter.ExactInputParams(swapPath, address(this), amount, minAmountOut));
     }
 }
