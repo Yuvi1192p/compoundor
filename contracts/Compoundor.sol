@@ -182,13 +182,15 @@ contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall {
 
             // deposit liquidity into tokenId
             if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
+                uint256 amount0Min = state.maxAddAmount0.mul(995).div(1000);
+                uint256 amount1Min = state.maxAddAmount1.mul(995).div(1000);
                 (, compounded0, compounded1) = nonfungiblePositionManager.increaseLiquidity(
                     INonfungiblePositionManager.IncreaseLiquidityParams(
                         params.tokenId,
                         state.maxAddAmount0,
                         state.maxAddAmount1,
-                        0,
-                        0,
+                        amount0Min,
+                        amount1Min,
                         block.timestamp
                     )
                 );
@@ -569,9 +571,11 @@ contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall {
 
             if (state.delta0 > 0) {
                 if (state.sell0) {
+                    uint256 minAmountOut = state.delta0.mul(priceX96).div(Q96).mul(990).div(1000);
                     uint256 amountOut = _swap(
                                             abi.encodePacked(params.token0, params.fee, params.token1), 
-                                            state.delta0, 
+                                            state.delta0,
+                                            minAmountOut,
                                             params.deadline
                                         );
                     amount0 = amount0.sub(state.delta0);
@@ -580,7 +584,13 @@ contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall {
                     state.delta1 = state.delta0.mul(priceX96).div(Q96);
                     // prevent possible rounding to 0 issue
                     if (state.delta1 > 0) {
-                        uint256 amountOut = _swap(abi.encodePacked(params.token1, params.fee, params.token0), state.delta1, params.deadline);
+                        uint256 minAmountOut = state.delta1.mul(Q96).div(priceX96).mul(990).div(1000);
+                        uint256 amountOut = _swap(
+                            abi.encodePacked(params.token1, params.fee, params.token0),
+                            state.delta1,
+                            minAmountOut,
+                            params.deadline
+                        );
                         amount0 = amount0.add(amountOut);
                         amount1 = amount1.sub(state.delta1);
                     }
@@ -612,10 +622,10 @@ contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall {
         }
     }
 
-    function _swap(bytes memory swapPath, uint256 amount, uint256 deadline) internal returns (uint256 amountOut) {
+    function _swap(bytes memory swapPath, uint256 amount, uint256 minAmountOut, uint256 deadline) internal returns (uint256 amountOut) {
         if (amount > 0) {
             amountOut = swapRouter.exactInput(
-                ISwapRouter.ExactInputParams(swapPath, address(this), deadline, amount, 0)
+                ISwapRouter.ExactInputParams(swapPath, address(this), deadline, amount, minAmountOut)
             );
         }
     }
